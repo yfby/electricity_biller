@@ -1,6 +1,14 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext, filedialog
 import database_handler
+import os
+from datetime import datetime
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.units import inch
+import sys
 
 class ElectricityBillingApp:
     def __init__(self, root):
@@ -12,6 +20,11 @@ class ElectricityBillingApp:
         
         # Initialize database
         self.db = database_handler.data_handler("customer.db")
+        
+        # Create bills directory if it doesn't exist
+        self.bills_dir = "bills"
+        if not os.path.exists(self.bills_dir):
+            os.makedirs(self.bills_dir)
         
         # Configure colors
         self.bg_color = "#eff1f5"
@@ -54,6 +67,7 @@ class ElectricityBillingApp:
             ("👤 Get Customer Information", self.show_get_customer_info, self.secondary_color),
             ("💰 Bill Customer", self.show_bill_customer, self.secondary_color),
             ("📋 List All Customers", self.show_all_customers, self.secondary_color),
+            ("📄 Load Previous Bills", self.show_previous_bills, self.secondary_color),
             ("❌ Exit", self.exit_app, "#e74c3c")
         ]
         
@@ -71,19 +85,6 @@ class ElectricityBillingApp:
                 relief=tk.FLAT
             )
             btn.pack(pady=10)
-     
-    #         # Hover effects (not very useful)
-    #         btn.bind("<Enter>", lambda e, b=btn: b.config(bg=self._darken_color(b.cget("bg"))))
-    #         btn.bind("<Leave>", lambda e, b=btn, c=color: b.config(bg=c))
-    # 
-    # def _darken_color(self, color):
-    #     """Darken a color for hover effect"""
-    #     color_map = {
-    #         "#27ae60": "#229954",
-    #         "#3498db": "#2980b9",
-    #         "#e74c3c": "#c0392b"
-    #     }
-    #     return color_map.get(color, color)
     
     def create_back_button(self, parent):
         """Create back button"""
@@ -379,10 +380,22 @@ TOTAL AMOUNT DUE:        ₱{bill_info['total_amount_due']:>10.2f}
             bill_text.insert(1.0, bill_display)
             bill_text.config(state=tk.DISABLED)
             
+            # Store the current bill info for saving
+            self.current_bill_info = {
+                'customer': customer,
+                'bill_info': bill_info,
+                'bill_display': bill_display,
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
             messagebox.showinfo("Success", "Bill generated successfully!")
         
+        # Buttons frame
+        buttons_frame = tk.Frame(input_frame, bg="white")
+        buttons_frame.grid(row=2, column=0, columnspan=2, pady=20)
+        
         submit_btn = tk.Button(
-            input_frame,
+            buttons_frame,
             text="Generate Bill",
             font=("Arial", 12, "bold"),
             bg=self.accent_color,
@@ -393,7 +406,35 @@ TOTAL AMOUNT DUE:        ₱{bill_info['total_amount_due']:>10.2f}
             padx=20,
             pady=5
         )
-        submit_btn.grid(row=2, column=0, columnspan=2, pady=20)
+        submit_btn.pack(side=tk.LEFT, padx=5)
+        
+        save_txt_btn = tk.Button(
+            buttons_frame,
+            text="💾 Save as TXT",
+            font=("Arial", 12, "bold"),
+            bg="#8839ef",
+            fg="white",
+            cursor="hand2",
+            command=lambda: self.save_bill_as_txt(),
+            relief=tk.FLAT,
+            padx=20,
+            pady=5
+        )
+        save_txt_btn.pack(side=tk.LEFT, padx=5)
+        
+        save_pdf_btn = tk.Button(
+            buttons_frame,
+            text="📄 Generate PDF",
+            font=("Arial", 12, "bold"),
+            bg="#d20f39",
+            fg="white",
+            cursor="hand2",
+            command=lambda: self.save_bill_as_pdf(),
+            relief=tk.FLAT,
+            padx=20,
+            pady=5
+        )
+        save_pdf_btn.pack(side=tk.LEFT, padx=5)
     
     def compute_bill(self, kwh_used, discount_type="None"):
         """Compute bill with discount"""
@@ -437,6 +478,266 @@ TOTAL AMOUNT DUE:        ₱{bill_info['total_amount_due']:>10.2f}
             'vat': vat,
             'total_amount_due': total_amount_due
         }
+    
+    def save_bill_as_txt(self):
+        """Save the current bill as a text file"""
+        if not hasattr(self, 'current_bill_info'):
+            messagebox.showerror("Error", "No bill to save! Please generate a bill first.")
+            return
+        
+        customer = self.current_bill_info['customer']
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"bill_{customer['account_number']}_{timestamp}.txt"
+        filepath = os.path.join(self.bills_dir, filename)
+        
+        try:
+            with open(filepath, 'w') as f:
+                f.write(f"Generated: {self.current_bill_info['timestamp']}\n")
+                f.write(self.current_bill_info['bill_display'])
+            
+            messagebox.showinfo("Success", f"Bill saved to:\n{filepath}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save bill:\n{str(e)}")
+    
+    def save_bill_as_pdf(self):
+        """Generate and save bill as PDF"""
+        if not hasattr(self, 'current_bill_info'):
+            messagebox.showerror("Error", "No bill to save! Please generate a bill first.")
+            return
+        
+        customer = self.current_bill_info['customer']
+        bill_info = self.current_bill_info['bill_info']
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"bill_{customer['account_number']}_{timestamp}.pdf"
+        filepath = os.path.join(self.bills_dir, filename)
+        
+        try:
+            doc = SimpleDocTemplate(filepath, pagesize=letter)
+            story = []
+            styles = getSampleStyleSheet()
+            
+            # Title
+            title = Paragraph("<b>ELECTRICITY BILL</b>", styles['Title'])
+            story.append(title)
+            story.append(Spacer(1, 0.3*inch))
+            
+            # Customer Information
+            customer_data = [
+                ['Account Number:', customer['account_number']],
+                ['Customer Name:', customer['name']],
+                ['Address:', customer['address']],
+                ['Customer Type:', customer['type']],
+                ['Discount Type:', customer['discount']],
+                ['Generated:', self.current_bill_info['timestamp']]
+            ]
+            
+            customer_table = Table(customer_data, colWidths=[2*inch, 4*inch])
+            customer_table.setStyle(TableStyle([
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#04a5e5')),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ]))
+            story.append(customer_table)
+            story.append(Spacer(1, 0.3*inch))
+            
+            # Consumption Details
+            consumption_header = Paragraph("<b>CONSUMPTION DETAILS</b>", styles['Heading2'])
+            story.append(consumption_header)
+            story.append(Spacer(1, 0.1*inch))
+            
+            consumption_data = [
+                ['kWh Used:', f"{bill_info['kwh_used']:.2f} kWh"],
+                ['Rate:', f"₱{bill_info['rate']:.2f} per kWh"]
+            ]
+            
+            consumption_table = Table(consumption_data, colWidths=[2*inch, 4*inch])
+            consumption_table.setStyle(TableStyle([
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            story.append(consumption_table)
+            story.append(Spacer(1, 0.2*inch))
+            
+            # Charges Breakdown
+            charges_header = Paragraph("<b>CHARGES BREAKDOWN</b>", styles['Heading2'])
+            story.append(charges_header)
+            story.append(Spacer(1, 0.1*inch))
+            
+            charges_data = [
+                ['Base Charge:', f"₱{bill_info['base_charge']:.2f}"],
+                ['Environmental Fee:', f"₱{bill_info['environmental_fee']:.2f}"],
+                ['Subtotal:', f"₱{bill_info['subtotal']:.2f}"]
+            ]
+            
+            if bill_info['discount_amount'] > 0:
+                discount_percent = int(bill_info['discount_rate'] * 100)
+                charges_data.append([
+                    f"Discount ({bill_info['discount_type']} {discount_percent}%):",
+                    f"-₱{bill_info['discount_amount']:.2f}"
+                ])
+                charges_data.append([
+                    'Subtotal after discount:',
+                    f"₱{bill_info['subtotal_after_discount']:.2f}"
+                ])
+            
+            charges_data.append(['VAT (12%):', f"₱{bill_info['vat']:.2f}"])
+            
+            charges_table = Table(charges_data, colWidths=[3*inch, 2*inch])
+            charges_table.setStyle(TableStyle([
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            story.append(charges_table)
+            story.append(Spacer(1, 0.2*inch))
+            
+            # Total
+            total_data = [
+                ['TOTAL AMOUNT DUE:', f"₱{bill_info['total_amount_due']:.2f}"]
+            ]
+            
+            total_table = Table(total_data, colWidths=[3*inch, 2*inch])
+            total_table.setStyle(TableStyle([
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 14),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#40a02b')),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('LINEABOVE', (0, 0), (-1, 0), 2, colors.black),
+                ('LINEBELOW', (0, 0), (-1, 0), 2, colors.black),
+                ('TOPPADDING', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ]))
+            story.append(total_table)
+            
+            doc.build(story)
+            messagebox.showinfo("Success", f"PDF receipt saved to:\n{filepath}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate PDF:\n{str(e)}")
+    
+    def show_previous_bills(self):
+        """Show previous bills"""
+        # Clear previous content
+        for widget in self.root.winfo_children()[1:]:
+            widget.destroy()
+            
+        main_frame = tk.Frame(self.root, bg=self.bg_color)
+        main_frame.pack(expand=True, fill=tk.BOTH)
+        
+        self.create_back_button(main_frame)
+        
+        # Table container
+        table_frame = tk.Frame(main_frame, bg="white", relief=tk.RAISED, borderwidth=2)
+        table_frame.pack(padx=20, pady=20, fill=tk.BOTH, expand=True)
+        
+        tk.Label(
+            table_frame,
+            text="Previous Bills",
+            font=("Arial", 18, "bold"),
+            bg="white"
+        ).pack(pady=20)
+        
+        # Create Treeview
+        tree_frame = tk.Frame(table_frame, bg="white")
+        tree_frame.pack(padx=20, pady=10, fill=tk.BOTH, expand=True)
+        
+        # Scrollbars
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical")
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal")
+        
+        # Treeview
+        tree = ttk.Treeview(
+            tree_frame,
+            columns=("Filename", "Type", "Date", "Size"),
+            show="headings",
+            yscrollcommand=vsb.set,
+            xscrollcommand=hsb.set,
+            height=15
+        )
+        
+        vsb.config(command=tree.yview)
+        hsb.config(command=tree.xview)
+        
+        # Configure columns
+        tree.heading("Filename", text="Filename")
+        tree.heading("Type", text="Type")
+        tree.heading("Date", text="Date Modified")
+        tree.heading("Size", text="Size")
+        
+        tree.column("Filename", width=300)
+        tree.column("Type", width=80, anchor=tk.CENTER)
+        tree.column("Date", width=200)
+        tree.column("Size", width=100, anchor=tk.CENTER)
+        
+        # Get all bill files
+        if os.path.exists(self.bills_dir):
+            files = sorted(
+                [f for f in os.listdir(self.bills_dir) if f.startswith('bill_')],
+                key=lambda x: os.path.getmtime(os.path.join(self.bills_dir, x)),
+                reverse=True
+            )
+            
+            for filename in files:
+                filepath = os.path.join(self.bills_dir, filename)
+                file_ext = filename.split('.')[-1].upper()
+                file_size = os.path.getsize(filepath)
+                size_kb = f"{file_size / 1024:.1f} KB"
+                mod_time = datetime.fromtimestamp(os.path.getmtime(filepath)).strftime("%Y-%m-%d %H:%M:%S")
+                
+                tree.insert("", tk.END, values=(filename, file_ext, mod_time, size_kb))
+        
+        # Add double-click event to open file
+        def on_bill_double_click(event):
+            selection = tree.selection()
+            if selection:
+                item = tree.item(selection[0])
+                filename = item['values'][0]
+                filepath = os.path.join(self.bills_dir, filename)
+                
+                try:
+                    if os.name == 'nt':  # Windows
+                        os.startfile(filepath)
+                    elif os.name == 'posix':  # macOS and Linux
+                        import subprocess
+                        subprocess.call(['open' if sys.platform == 'darwin' else 'xdg-open', filepath])
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to open file:\n{str(e)}")
+        
+        tree.bind("<Double-1>", on_bill_double_click)
+        
+        # Pack scrollbars and tree
+        tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+        
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(0, weight=1)
+        
+        # Info label
+        info_label = tk.Label(
+            table_frame,
+            text="Double-click a file to open it",
+            font=("Arial", 10, "italic"),
+            bg="white",
+            fg="gray"
+        )
+        info_label.pack(pady=5)
+        
+        # Total count
+        file_count = len(tree.get_children())
+        count_label = tk.Label(
+            table_frame,
+            text=f"Total Bills: {file_count}",
+            font=("Arial", 12, "bold"),
+            bg="white"
+        )
+        count_label.pack(pady=10)
     
     def show_all_customers(self):
         """Show all customers in a table"""
@@ -508,6 +809,19 @@ TOTAL AMOUNT DUE:        ₱{bill_info['total_amount_due']:>10.2f}
                 customer['usage'],
                 customer['all_time_usage']
             ))
+        
+        # Add click event to copy account number
+        def on_customer_click(event):
+            selection = tree.selection()
+            if selection:
+                item = tree.item(selection[0])
+                account_number = item['values'][0]
+                self.root.clipboard_clear()
+                self.root.clipboard_append(str(account_number))
+                self.root.update()
+                messagebox.showinfo("Copied", f"Account number {account_number} copied to clipboard!")
+        
+        tree.bind("<ButtonRelease-1>", on_customer_click)
         
         # Pack scrollbars and tree
         tree.grid(row=0, column=0, sticky="nsew")

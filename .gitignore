@@ -1,6 +1,8 @@
 #customers database
 customer.db
 bills/
+pyproject.toml
+.python-version
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

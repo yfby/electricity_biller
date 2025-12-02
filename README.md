@@ -150,7 +150,3 @@ pip install -r requirements.txt
 - **GUI:** Tkinter
 - **Database:** SQLite
 - **PDF:** ReportLab
-
----
-
-**Version:** 1.0 | **Last Updated:** December 2024

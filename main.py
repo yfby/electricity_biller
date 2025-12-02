@@ -10,6 +10,49 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.units import inch
 import sys
 
+def compute_bill(kwh_used, discount_type="None"):
+    """Compute bill with discount"""
+    if kwh_used <= 50:
+        rate = 5.00
+    elif kwh_used <= 100:
+        rate = 6.50
+    elif kwh_used <= 200:
+        rate = 8.00
+    else:
+        rate = 10.00
+    
+    base_charge = kwh_used * rate
+    environmental_fee = 50.00
+    subtotal = base_charge + environmental_fee
+    
+    discount_rates = {
+        "None": 0.0,
+        "Senior Citizen": 0.05,
+        "PWD": 0.05,
+        "Low-income": 0.10
+    }
+    
+    discount_rate = discount_rates.get(discount_type, 0.0)
+    discount_amount = subtotal * discount_rate
+    subtotal_after_discount = subtotal - discount_amount
+    
+    vat = subtotal_after_discount * 0.12
+    total_amount_due = subtotal_after_discount + vat
+    
+    return {
+        'kwh_used': kwh_used,
+        'rate': rate,
+        'base_charge': base_charge,
+        'environmental_fee': environmental_fee,
+        'subtotal': subtotal,
+        'discount_type': discount_type,
+        'discount_rate': discount_rate,
+        'discount_amount': discount_amount,
+        'subtotal_after_discount': subtotal_after_discount,
+        'vat': vat,
+        'total_amount_due': total_amount_due
+    }
+
 class ElectricityBillingApp:
     def __init__(self, root):
         self.root = root
@@ -331,7 +374,7 @@ All-Time Usage:    {customer['all_time_usage']} kWh
                 return
             
             # Compute bill
-            bill_info = self.compute_bill(kwh_used, customer['discount'])
+            bill_info = compute_bill(kwh_used, customer['discount'])
             
             # Update database
             self.db.update_usage(int(account_num), kwh_used)
@@ -435,50 +478,7 @@ TOTAL AMOUNT DUE:        ₱{bill_info['total_amount_due']:>10.2f}
             pady=5
         )
         save_pdf_btn.pack(side=tk.LEFT, padx=5)
-    
-    def compute_bill(self, kwh_used, discount_type="None"):
-        """Compute bill with discount"""
-        if kwh_used <= 50:
-            rate = 5.00
-        elif kwh_used <= 100:
-            rate = 6.50
-        elif kwh_used <= 200:
-            rate = 8.00
-        else:
-            rate = 10.00
-        
-        base_charge = kwh_used * rate
-        environmental_fee = 50.00
-        subtotal = base_charge + environmental_fee
-        
-        discount_rates = {
-            "None": 0.0,
-            "Senior Citizen": 0.05,
-            "PWD": 0.05,
-            "Low-income": 0.10
-        }
-        
-        discount_rate = discount_rates.get(discount_type, 0.0)
-        discount_amount = subtotal * discount_rate
-        subtotal_after_discount = subtotal - discount_amount
-        
-        vat = subtotal_after_discount * 0.12
-        total_amount_due = subtotal_after_discount + vat
-        
-        return {
-            'kwh_used': kwh_used,
-            'rate': rate,
-            'base_charge': base_charge,
-            'environmental_fee': environmental_fee,
-            'subtotal': subtotal,
-            'discount_type': discount_type,
-            'discount_rate': discount_rate,
-            'discount_amount': discount_amount,
-            'subtotal_after_discount': subtotal_after_discount,
-            'vat': vat,
-            'total_amount_due': total_amount_due
-        }
-    
+     
     def save_bill_as_txt(self):
         """Save the current bill as a text file"""
         if not hasattr(self, 'current_bill_info'):

@@ -1,6 +1,6 @@
 #customers database
 customer.db
-
+bills/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
